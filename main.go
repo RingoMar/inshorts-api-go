@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -14,18 +15,34 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-// Article Structure
-type Article struct {
-	ID       string    `json:"id,omitempty" bson:"_id,omitempty"`
-	Title    string    `json:"title,omitempty" bson:"title,omitempty"`
-	SubTitle string    `json:"subtitle,omitempty" bson:"subtitle,omitempty"`
-	Content  string    `json:"content,omitempty" bson:"content,omitempty"`
-	Created  time.Time `json:"created,omitempty" bson:"created,omitempty"`
+// Database Structure
+type Documents struct {
+	ID      string    `json:"id,omitempty" bson:"_id,omitempty"`
+	Need    int       `json:"need,omitempty" bson:"need,omitempty"`
+	Subs    int       `json:"subs,omitempty" bson:"subs,omitempty"`
+	Goal    int       `json:"goal,omitempty" bson:"goal,omitempty"`
+	Created time.Time `json:"created,omitempty" bson:"created,omitempty"`
 }
 
 func main() {
+	for {
+
+		if !IsOnline() {
+			log.Println("Connected to internet. Welcome to the Party")
+			break
+		}
+	}
+
 	connect()
 	handleRequest()
+}
+
+func IsOnline() bool {
+	_, err := http.Get("https://icanhazip.com/")
+	if err == nil {
+		return false
+	}
+	return true
 }
 
 var client *mongo.Client
@@ -33,7 +50,7 @@ var client *mongo.Client
 // Connecting with the database (MongoDB)
 func connect() {
 
-	clientOptions := options.Client().ApplyURI("mondodb_url")
+	clientOptions := options.Client().ApplyURI("mongo_url")
 	client, _ = mongo.NewClient(clientOptions)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -56,61 +73,384 @@ func connect() {
 func handleRequest() {
 
 	http.HandleFunc("/", homePage)
-	http.HandleFunc("/articles", returnAllArticles)
-	http.HandleFunc("/articles/", returnSingleArticle)
-	http.HandleFunc("/articles/search", returnSearchResult)
+	http.HandleFunc("/api", homePage)
 
-	err := http.ListenAndServe(":8080", nil)
+	http.HandleFunc("/api/needs", handleNeeds)
+	http.HandleFunc("/api/sub", handleSubs)
+	http.HandleFunc("/api/goal", handleGoal)
+
+	err := http.ListenAndServe(":5284", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe", err)
 	}
 }
 
-// Home Page
 func homePage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello Himanshu!")
-	fmt.Println("Endopoint Hit: Home Page")
+	fmt.Fprintf(w, "Baby welcome to the party.")
+	log.Println("[RIN-DB]:: Home Page")
 }
 
-// Function for returning all articles and posting articles
-func returnAllArticles(response http.ResponseWriter, request *http.Request) {
+func handleNeeds(response http.ResponseWriter, request *http.Request) {
 
 	if request.Method == "GET" {
-		var articles []Article
-		collection := client.Database("test").Collection("Article")
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
 		defer cancel()
-		cursor, err := collection.Find(ctx, bson.M{})
+		cursor, err := collection.Find(ctx, bson.D{})
 		if err != nil {
 			response.WriteHeader(http.StatusInternalServerError)
 			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 			return
 		}
+
 		defer cursor.Close(ctx)
+
 		for cursor.Next(ctx) {
-			var article Article
-			cursor.Decode(&article)
-			articles = append(articles, article)
+			var record Documents
+			cursor.Decode(&record)
+
+			records = append(records, record)
 		}
 		if err = cursor.Err(); err != nil {
 			response.WriteHeader(http.StatusInternalServerError)
 			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 			return
 		}
-		fmt.Println("Endpoint Hit: returnAllArticles")
-		json.NewEncoder(response).Encode(articles)
-	} else {
-		request.ParseForm()
-		decoder := json.NewDecoder(request.Body)
-		var newArticle Article
-		newArticle.Created = time.Now()
-		err := decoder.Decode(&newArticle)
-		if err != nil {
-			panic(err)
+		log.Println("[RIN-DB]:: GET handleNeeds")
+
+		filter := bson.D{{Key: "need", Value: records[0].Need}}
+
+		update := bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "need", Value: records[0].Need + 1},
+			}},
 		}
-		log.Println(newArticle.ID)
-		fmt.Println("Endpoint Hit: Post Article")
-		insertArticle(newArticle)
+		collection.UpdateOne(context.TODO(), filter, update)
+
+		var _records []Documents
+		_collection := client.Database("databaseData").Collection("database")
+		_ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		_cursor, err := _collection.Find(_ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer _cursor.Close(_ctx)
+
+		for _cursor.Next(_ctx) {
+			var record Documents
+			_cursor.Decode(&record)
+
+			_records = append(_records, record)
+		}
+		if err = _cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: GET handleNeeds")
+		json.NewEncoder(response).Encode(_records)
+
+	} else {
+		var _records []Documents
+		_collection := client.Database("databaseData").Collection("database")
+		_ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		_cursor, err := _collection.Find(_ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer _cursor.Close(_ctx)
+
+		for _cursor.Next(_ctx) {
+			var record Documents
+			_cursor.Decode(&record)
+
+			_records = append(_records, record)
+		}
+		if err = _cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: GET handleNeeds")
+		json.NewEncoder(response).Encode(_records)
+
+	}
+}
+
+func handleGoal(response http.ResponseWriter, request *http.Request) {
+
+	if request.Method == "GET" {
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		cursor, err := collection.Find(ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer cursor.Close(ctx)
+
+		for cursor.Next(ctx) {
+			var record Documents
+			cursor.Decode(&record)
+
+			records = append(records, record)
+		}
+		if err = cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: GET records")
+		json.NewEncoder(response).Encode(records)
+
+	} else {
+
+		q := request.FormValue("goal")
+		i, _ := strconv.Atoi(q)
+
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		cursor, err := collection.Find(ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer cursor.Close(ctx)
+
+		for cursor.Next(ctx) {
+			var record Documents
+			cursor.Decode(&record)
+			records = append(records, record)
+		}
+		if err = cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		filter := bson.D{{Key: "goal", Value: records[1].Goal}}
+
+		update := bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "goal", Value: i},
+			}},
+		}
+
+		collection.UpdateOne(context.TODO(), filter, update)
+		log.Println("[RIN-DB]:: POST records")
+
+		var _records []Documents
+		_collection := client.Database("databaseData").Collection("database")
+		_ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		_cursor, err := _collection.Find(_ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer _cursor.Close(_ctx)
+
+		for _cursor.Next(_ctx) {
+			var record Documents
+			_cursor.Decode(&record)
+
+			_records = append(_records, record)
+		}
+		if err = _cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: GET _records")
+		json.NewEncoder(response).Encode(_records)
+
+	}
+}
+
+func handleSubs(response http.ResponseWriter, request *http.Request) {
+
+	if request.Method == "GET" {
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		cursor, err := collection.Find(ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer cursor.Close(ctx)
+
+		for cursor.Next(ctx) {
+			var record Documents
+			cursor.Decode(&record)
+
+			records = append(records, record)
+		}
+		if err = cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		log.Println("[RIN-DB]:: GET records")
+		json.NewEncoder(response).Encode(records)
+
+	} else {
+
+		q := request.FormValue("sub")
+		i, _ := strconv.Atoi(q)
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		cursor, err := collection.Find(ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer cursor.Close(ctx)
+
+		for cursor.Next(ctx) {
+			var record Documents
+			cursor.Decode(&record)
+			records = append(records, record)
+		}
+		if err = cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		filter := bson.D{{Key: "subs", Value: records[1].Subs}}
+
+		update := bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "subs", Value: records[1].Subs + i},
+			}},
+		}
+
+		collection.UpdateOne(context.TODO(), filter, update)
+		log.Println("[RIN-DB]:: POST records")
+
+		var _records []Documents
+		_collection := client.Database("databaseData").Collection("database")
+		_ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		_cursor, err := _collection.Find(_ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer _cursor.Close(_ctx)
+
+		for _cursor.Next(_ctx) {
+			var record Documents
+			_cursor.Decode(&record)
+
+			_records = append(_records, record)
+		}
+		if err = _cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: GET _records")
+		json.NewEncoder(response).Encode(_records)
+
+	}
+}
+
+func returnRecords(response http.ResponseWriter, request *http.Request) {
+
+	if request.Method == "GET" {
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		cursor, err := collection.Find(ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer cursor.Close(ctx)
+
+		for cursor.Next(ctx) {
+			var record Documents
+			cursor.Decode(&record)
+			records = append(records, record)
+		}
+		if err = cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: GET records")
+		json.NewEncoder(response).Encode(records)
+
+	} else {
+		var records []Documents
+		collection := client.Database("databaseData").Collection("database")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		defer cancel()
+		cursor, err := collection.Find(ctx, bson.D{})
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+
+		defer cursor.Close(ctx)
+
+		for cursor.Next(ctx) {
+			var record Documents
+			cursor.Decode(&record)
+			records = append(records, record)
+		}
+		if err = cursor.Err(); err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
+			return
+		}
+		log.Println("[RIN-DB]:: POST records")
+		json.NewEncoder(response).Encode(records)
+		// insertArticle(newArticle)
 	}
 }
 
@@ -120,26 +460,26 @@ func returnSingleArticle(response http.ResponseWriter, request *http.Request) {
 	request.ParseForm()
 	var id string = request.URL.Path
 	id = id[10:]
-	var article Article
-	collection := client.Database("test").Collection("Article")
+	var record Documents
+	collection := client.Database("databaseData").Collection("database")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := collection.FindOne(ctx, Article{ID: id}).Decode(&article)
+	err := collection.FindOne(ctx, Documents{ID: id}).Decode(&record)
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		return
 	}
-	fmt.Println("Returned Article ID NO : ", article.ID)
-	json.NewEncoder(response).Encode(article)
+	fmt.Println("Returned record ID NO : ", record.ID)
+	json.NewEncoder(response).Encode(record)
 }
 
 // For query the database using the search query q=
 func returnSearchResult(response http.ResponseWriter, request *http.Request) {
 	fmt.Println("Searching.....")
 	q := request.FormValue("q")
-	collection := client.Database("test").Collection("Article")
+	collection := client.Database("databaseData").Collection("database")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// creating a new index for search query
@@ -153,28 +493,24 @@ func returnSearchResult(response http.ResponseWriter, request *http.Request) {
 		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		return
 	}
-	var articles []Article
+	var records []Documents
 	defer cursor.Close(ctx)
 	for cursor.Next(ctx) {
-		var article Article
-		cursor.Decode(&article)
-		articles = append(articles, article)
+		var record Documents
+		cursor.Decode(&record)
+		records = append(records, record)
 	}
 	if err = cursor.Err(); err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 		response.Write([]byte(`{ "message": "` + err.Error() + `" }`))
 		return
 	}
-	fmt.Println("Endpoint Hit: returnAllArticles")
-	json.NewEncoder(response).Encode(articles)
+	fmt.Println("Endpoint Hit: returnAllrecords")
+	json.NewEncoder(response).Encode(records)
 }
 
-// function for inserting the article in the database
-func insertArticle(article Article) {
-	collection := client.Database("test").Collection("Article")
-	insertResult, err := collection.InsertOne(context.TODO(), article)
-	if err != nil {
-		log.Fatal(err)
+func CheckError(e error) {
+	if e != nil {
+		fmt.Println(e)
 	}
-	fmt.Println("Inserted post with ID:", insertResult.InsertedID)
 }
